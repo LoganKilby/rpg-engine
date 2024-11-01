@@ -1,0 +1,5 @@
+﻿  Building Custom Rule C:/work/projects/sidescroller/thirdparty/glfw-3.4/tests/CMakeLists.txt
+  inputlag.c
+  getopt.c
+  Generating Code...
+  inputlag.vcxproj -> C:\work\projects\sidescroller\thirdparty\glfw-3.4\build\tests\Debug\inputlag.exe

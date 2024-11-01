@@ -1,0 +1,5 @@
+﻿  Building Custom Rule C:/work/projects/sidescroller/thirdparty/glfw-3.4/tests/CMakeLists.txt
+  msaa.c
+  getopt.c
+  Generating Code...
+  msaa.vcxproj -> C:\work\projects\sidescroller\thirdparty\glfw-3.4\build\tests\Debug\msaa.exe

@@ -1,0 +1,5 @@
+﻿  Building Custom Rule C:/work/projects/sidescroller/thirdparty/glfw-3.4/tests/CMakeLists.txt
+  threads.c
+  tinycthread.c
+  Generating Code...
+  threads.vcxproj -> C:\work\projects\sidescroller\thirdparty\glfw-3.4\build\tests\Debug\threads.exe

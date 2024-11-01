@@ -1,0 +1,10 @@
+^C:\WORK\PROJECTS\SIDESCROLLER\THIRDPARTY\GLFW-3.4\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/work/projects/sidescroller/thirdparty/glfw-3.4 -BC:/work/projects/sidescroller/thirdparty/glfw-3.4/build --check-stamp-file C:/work/projects/sidescroller/thirdparty/glfw-3.4/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
