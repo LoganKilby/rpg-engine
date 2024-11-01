@@ -5,7 +5,8 @@ struct GameState {
 
     int tile_map_width;
     int tile_map_height;
-    f32 tile_size;
+    f32 tile_width;
+    f32 tile_height;
 
     int view_offset_x;
     int view_offset_y;
@@ -40,8 +41,9 @@ struct Tilemap {
 v2 TileToScreen(int tile_x, int tile_y, f32 tile_width, f32 tile_height, int tile_cols, int tile_rows) {
     f32 half_tile_width = tile_width * 0.5f;
     f32 half_tile_height = tile_height * 0.5f;
-    v2 x = { tile_x * 1.0f * half_tile_width, tile_x * 0.5f * half_tile_height };
-    v2 y = { tile_y * -1.0f * half_tile_width, tile_y * 0.5f * half_tile_height };
+    f32 r = 0.666666f;
+    v2 x = { tile_x * 1.0f * half_tile_width, tile_x * r * half_tile_height };
+    v2 y = { tile_y * -1.0f * half_tile_width, tile_y * r * half_tile_height };
 
     v2 result = VAdd(x, y);
     //result.x -= half_tile_width;
@@ -82,9 +84,8 @@ void UpdateAndRender(GameState *state) {
     v4 line_color = { 0.0f, 0.0f, 1.0f, 1.0f };
     v4 fill_color = { .50f, .50f, 1.0f, 1.0f };
 
-    f32 tile_map_width = state->tile_size * state->tile_map_width;
-    f32 tile_map_height = state->tile_size * state->tile_map_height;
-
+    f32 tile_map_width = state->tile_width * state->tile_map_width;
+    f32 tile_map_height = state->tile_height * state->tile_map_height;
 
     DrawRectangleLines(0, tile_map_width, 0, tile_map_height, fill_color);
 
@@ -98,29 +99,28 @@ void UpdateAndRender(GameState *state) {
 
     DrawRectangleLines(0 + offset_x, tile_map_width + offset_x, 0 + offset_y, tile_map_height + offset_y, line_color);
 
+    f32 scale = 1;
+
+    Texture temp = state->test_texture;
+    temp.width = state->test_texture.width * scale;
+    temp.height = state->test_texture.height * scale;
+
     for (int r = 0; r < state->tile_map_height; ++r) {
         for (int c = 0; c < state->tile_map_width; ++c) {
-            #if 0
-            int tile_x = state->view_offset_x + c * state->tile_size;
-            int tile_y = state->view_offset_y + r * state->tile_size;
+            v2 screen_coords = TileToScreen(c, r, state->tile_width, state->tile_height, state->tile_map_width, state->tile_map_height);
+            screen_coords.x += state->view_offset_x;
+            screen_coords.y += state->view_offset_y;
 
-            int left = tile_x;
-            int right = tile_x + state->tile_size;
-            int top = tile_y;
-            int bottom = tile_y + state->tile_size;
+            screen_coords = screen_coords * scale;
 
-            DrawRectangleLines(left, right, top, bottom, line_color);
-            DrawRectangle(left, right, top, bottom, fill_color);
-            #endif
+            DrawTexture(temp, screen_coords.x, screen_coords.y);
 
-            v2 center = TileToScreen(c, r, state->tile_size, state->tile_size, state->tile_map_width, state->tile_map_height);
-
-            DrawPixel(center.x, center.y, line_color, 5);
+            screen_coords.x -= state->tile_width *0.5f;
+            //DrawPixel(screen_coords.x, screen_coords.y, line_color, 5);
         }
     }
 
-
-    DrawPixel(320, 320, fill_color, 5);
+    DrawTexture(temp, 0, 0);
 }
 
 void PrintInputEvent(InputEvent *event) {
@@ -151,18 +151,19 @@ void PrintInputEvent(InputEvent *event) {
 void InitializeGameState(GameState *state) {
     state->initialized = true;
 
-    state->tile_size = 32; // w,h
+    state->tile_width = 256;
+    state->tile_height = 192;
     state->tile_map_width = 10;
     state->tile_map_height = 10;
 
-    state->test_texture = LoadTexture("assets/isometric-asset-pack/256x512 Trees.png");
+    state->test_texture = LoadTexture("C:/work/projects/eco-strategy/assets/isometric-asset-pack/256x192Tile.png");
 }
 
 void ProcessInputEvents(GameState *state) {
     InputEvent event;
 
     while (GetNextInputEvent(&event)) {
-        PrintInputEvent(&event);
+        //PrintInputEvent(&event);
 
         if (event.type == InputEventType::CursorPositionEvent) {
             // TODO: Mouse is hovering window

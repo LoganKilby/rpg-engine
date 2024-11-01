@@ -33,6 +33,41 @@ struct Texture {
 
 #define Squared(a) (a*a)
 
+inline v2 operator+(v2 &a, v2 &b) {
+    v2 result;
+    result.x = a.x + b.x;
+    result.y = a.y + b.y;
+    return result;
+}
+
+inline v2 operator+(v2 &a, f32 b) {
+    v2 result;
+    result.x = a.x + b;
+    result.y = a.y + b;
+    return result;
+}
+
+inline v2 operator-(v2 &a, v2 &b) {
+    v2 result;
+    result.x = a.x - b.x;
+    result.y = a.y - b.y;
+    return result;
+}
+
+inline v2 operator-(v2 &a, f32 b) {
+    v2 result;
+    result.x = a.x - b;
+    result.y = a.y - b;
+    return result;
+}
+
+inline v2 operator*(v2 &a, f32 b) {
+    v2 result;
+    result.x = a.x * b;
+    result.y = a.y * b;
+    return result;
+}
+
 f32 Length(v2 a) {
     f32 result = sqrt(a.x*a.x + a.y*a.y);
     return result;
@@ -459,11 +494,13 @@ Texture LoadTexture(const char *filename) {
 }
 
 void DrawTexture(Texture texture, int x, int y) {
-    // set color to white
     int left = x;
-    int right = texture.width;
+    int right = x + texture.width;
     int top = y;
-    int bottom = texture.height;
+    int bottom = y + texture.height;
+
+    Assert(left < right);
+    Assert(top < bottom);
 
     GLuint temp = glutil_sampler_2d;
     glutil_sampler_2d = texture.id;
@@ -518,6 +555,33 @@ void MathTest() {
     a = VAdd({0, 0}, {3, -3});
     Assert(a.x == 3);
     Assert(a.y == -3);
+
+    a = { 0, 0 };
+    v2 b = { 1, 1 };
+    v2 c = a + b;
+    Assert(c.x == 1);
+    Assert(c.y == 1);
+
+    a = {};
+    a = a + 1;
+    Assert(a.x == 1);
+    Assert(a.y == 1);
+
+    a = {};
+    b = {1,1};
+    c = a - b;
+    Assert(c.x == -1);
+    Assert(c.y == -1);
+
+    a = {};
+    c = a - 1;
+    Assert(c.x == -1);
+    Assert(c.y == -1);
+
+    a = {1,1};
+    a = a * 0.5f;
+    Assert(a.x == 0.5f);
+    Assert(a.y == 0.5f);
 }
 
 
