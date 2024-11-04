@@ -25,6 +25,11 @@ struct v2 {
     f32 x, y;
 };
 
+struct mat2 {
+    v2 c0;
+    v2 c1;
+};
+
 struct Texture {
     GLuint id;
     int width;
@@ -101,6 +106,33 @@ v2 VAdd(v2 a, f32 b) {
     v2 result;
     result.x = a.x + b;
     result.y = a.y + b;
+    return result;
+}
+
+v2 MMul(mat2 m, v2 v) {
+    v2 result;
+    result.x = m.c0.x * v.x + m.c1.x * v.y;
+    result.y = m.c0.y * v.x + m.c1.y * v.y;
+
+    return result;
+}
+
+mat2 MMul(mat2 m, f32 n) {
+    mat2 result;
+    result.c0 = m.c0 * n;
+    result.c1 = m.c1 * n;
+    return result;
+}
+
+f32 Determinant(mat2 m) {
+    f32 result = m.c0.x * m.c1.y - m.c1.x * m.c0.y;
+    return result;
+}
+
+mat2 Inverse(mat2 m) {
+    f32 d = Determinant(m);
+    mat2 m1 = { {m.c1.y, -m.c0.y}, {-m.c1.x, m.c0.x} };
+    mat2 result = MMul(m1, 1 / d);
     return result;
 }
 
@@ -582,6 +614,27 @@ void MathTest() {
     a = a * 0.5f;
     Assert(a.x == 0.5f);
     Assert(a.y == 0.5f);
+
+    mat2 m = { {1,3}, {2,4}};
+    v2 v = {5,5};
+    v = MMul(m, v);
+    Assert(v.x == 15);
+    Assert(v.y == 35);
+
+    m = { {4,0}, {1,2} };
+    f32 d = Determinant(m);
+    Assert(d == 8);
+
+    m = { {-6,-1}, {3,1} };
+    d = Determinant(m);
+    Assert(d == -3);
+
+    m = { {3,4}, {1,2} };
+    m = Inverse(m);
+    Assert(m.c0.x == 1);
+    Assert(m.c0.y == -2);
+    Assert(m.c1.x == -0.5);
+    Assert(m.c1.y == 3/2.0f);
 }
 
 

@@ -1,25 +1,5 @@
 #include "glutil.cpp"
 
-struct GameState {
-    b32 initialized;
-
-    int tile_map_width;
-    int tile_map_height;
-    f32 tile_width;
-    f32 tile_height;
-
-    int view_offset_x;
-    int view_offset_y;
-
-    Texture test_texture;
-};
-
-#define PAN_SPEED 15
-
-void PrintInputEvent(InputEvent *event);
-void InitializeGameState(GameState *state);
-void ProcessInputEvents(GameState *state);
-
 /*
     https://www.youtube.com/watch?v=04oQ2jOUjkU&t=254s&ab_channel=SimonDev
     i,j
@@ -34,39 +14,52 @@ void ProcessInputEvents(GameState *state);
 */
 struct Tilemap {
     int rows;
-    int cols;
-    int size;
+    int columns;
+    int tile_width;
+    int tile_height;
 };
 
-v2 TileToScreen(int tile_x, int tile_y, f32 tile_width, f32 tile_height, int tile_cols, int tile_rows) {
-    f32 half_tile_width = tile_width * 0.5f;
-    f32 half_tile_height = tile_height * 0.5f;
+struct GameState {
+    b32 initialized;
+
+    Tilemap tilemap;
+
+    int view_offset_x;
+    int view_offset_y;
+
+    Texture test_texture;
+};
+
+#define PAN_SPEED 15
+
+void PrintInputEvent(InputEvent *event);
+void InitializeGameState(GameState *state);
+void ProcessInputEvents(GameState *state);
+
+mat2 CreateTilemapTransform() {
+    return{};
+}
+
+// TODO(lmk): matrix
+v2 TileToScreen(int tile_x, int tile_y, Tilemap tilemap) {
+    f32 half_tile_width = tilemap.tile_width * 0.5f;
+    f32 half_tile_height = tilemap.tile_height * 0.5f;
     f32 r = 0.666666f;
     v2 x = { tile_x * 1.0f * half_tile_width, tile_x * r * half_tile_height };
     v2 y = { tile_y * -1.0f * half_tile_width, tile_y * r * half_tile_height };
 
     v2 result = VAdd(x, y);
-    //result.x -= half_tile_width;
+    result.x -= half_tile_width; // move origin back to top-left
 
     int fb_width, fb_height;
     GetWindowFramebufferSize(&fb_width, &fb_height);
 
-    int tile_map_width = tile_cols * tile_width;
-    int tile_map_height = tile_rows * tile_height;
+    result.x += fb_width*0.5f; // center the tilemap horizontally
 
-    int tile_map_center_x = tile_map_width * 0.5f;
-    int screen_center_x = fb_width * 0.5f;
-    int offset_x = screen_center_x - tile_map_center_x;
-
-    int tile_map_center_y = tile_map_height * 0.5f;
-    int screen_center_y = fb_height * 0.5f;
-    int offset_y = screen_center_y - tile_map_center_y;
-
-    result.x += offset_x;
-    result.y += offset_y;
-
-    result.x += tile_map_width*0.5f;
-    result.y += tile_map_height*0.25f;
+    int tile_map_center_y = tilemap.tile_height * tilemap.rows * r * 0.5f;
+    int fb_center_y = fb_height*0.5f;
+    int center_y_offset = fb_center_y - tile_map_center_y;
+    result.y += center_y_offset; // center the tilemap vertically
 
     return result;
 }
@@ -84,8 +77,10 @@ void UpdateAndRender(GameState *state) {
     v4 line_color = { 0.0f, 0.0f, 1.0f, 1.0f };
     v4 fill_color = { .50f, .50f, 1.0f, 1.0f };
 
-    f32 tile_map_width = state->tile_width * state->tile_map_width;
-    f32 tile_map_height = state->tile_height * state->tile_map_height;
+    f32 scale = 0.5;
+
+    f32 tile_map_width = state->tilemap.tile_width * state->tilemap.columns * scale;
+    f32 tile_map_height = state->tilemap.tile_height * state->tilemap.rows * scale;
 
     DrawRectangleLines(0, tile_map_width, 0, tile_map_height, fill_color);
 
@@ -99,28 +94,23 @@ void UpdateAndRender(GameState *state) {
 
     DrawRectangleLines(0 + offset_x, tile_map_width + offset_x, 0 + offset_y, tile_map_height + offset_y, line_color);
 
-    f32 scale = 1;
-
     Texture temp = state->test_texture;
     temp.width = state->test_texture.width * scale;
     temp.height = state->test_texture.height * scale;
 
-    for (int r = 0; r < state->tile_map_height; ++r) {
-        for (int c = 0; c < state->tile_map_width; ++c) {
-            v2 screen_coords = TileToScreen(c, r, state->tile_width, state->tile_height, state->tile_map_width, state->tile_map_height);
+    for (int r = 0; r < state->tilemap.rows; ++r) {
+        for (int c = 0; c < state->tilemap.columns; ++c) {
+            v2 screen_coords = TileToScreen(c, r, state->tilemap);
             screen_coords.x += state->view_offset_x;
             screen_coords.y += state->view_offset_y;
 
-            screen_coords = screen_coords * scale;
-
-            DrawTexture(temp, screen_coords.x, screen_coords.y);
-
-            screen_coords.x -= state->tile_width *0.5f;
-            //DrawPixel(screen_coords.x, screen_coords.y, line_color, 5);
+            DrawTexture(state->test_texture, screen_coords.x, screen_coords.y);
         }
     }
 
-    DrawTexture(temp, 0, 0);
+    DrawPixel(fb_width*0.5, fb_height*0.5, fill_color, 5);
+
+    //DrawTexture(temp, 0, 0);
 }
 
 void PrintInputEvent(InputEvent *event) {
@@ -151,10 +141,10 @@ void PrintInputEvent(InputEvent *event) {
 void InitializeGameState(GameState *state) {
     state->initialized = true;
 
-    state->tile_width = 256;
-    state->tile_height = 192;
-    state->tile_map_width = 10;
-    state->tile_map_height = 10;
+    state->tilemap.tile_width = 256;
+    state->tilemap.tile_height = 192;
+    state->tilemap.columns = 10;
+    state->tilemap.rows = 10;
 
     state->test_texture = LoadTexture("C:/work/projects/eco-strategy/assets/isometric-asset-pack/256x192Tile.png");
 }
