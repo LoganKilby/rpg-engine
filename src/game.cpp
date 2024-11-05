@@ -17,33 +17,41 @@ struct Tilemap {
     int columns;
     int tile_width;
     int tile_height;
+
+    v2 position;
+};
+
+struct TileIndex {
+    int row;
+    int column;
 };
 
 struct GameState {
     b32 initialized;
 
     Tilemap tilemap;
+    Font font;
 
     int view_offset_x;
     int view_offset_y;
 
     Texture test_texture;
+    Texture atlas;
 };
-
-#define PAN_SPEED 15
 
 void PrintInputEvent(InputEvent *event);
 void InitializeGameState(GameState *state);
 void ProcessInputEvents(GameState *state);
 
 #define TILEMAP_ROTATION (2 / 3.0f)
+#define PAN_SPEED 15
 
-mat2 CreateTilemapTransform(Tilemap tilemap) {
+mat2 CreateTilemapTransform(Tilemap *tilemap) {
     mat2 result;
 
-    f32 half_tile_width = tilemap.tile_width * 0.5f;
-    f32 half_tile_height = tilemap.tile_height * 0.5f;
-    f32 r = TILEMAP_ROTATION; //0.666666f; // TODO: derive this
+    f32 half_tile_width = tilemap->tile_width * 0.5f;
+    f32 half_tile_height = tilemap->tile_height * 0.5f;
+    f32 r = TILEMAP_ROTATION; //0.666666f; // TODO: derive this?
 
     result.c0 = { 1.0f * half_tile_width, r * half_tile_height };
     result.c1 = { -1.0f * half_tile_width, r * half_tile_height };
@@ -51,28 +59,29 @@ mat2 CreateTilemapTransform(Tilemap tilemap) {
     return result;
 }
 
-// TODO(lmk): matrix
-v2 TileToScreen(int tile_x, int tile_y, Tilemap tilemap) {
+v2 TileToScreen(int tile_x, int tile_y, Tilemap *tilemap) {
     mat2 transform = CreateTilemapTransform(tilemap);
 
     v2 result = MMul(transform, {(f32)tile_x, (f32)tile_y});
 
-    result.x -= tilemap.tile_width * 0.5f; // move origin back to top-left
+    result.x -= tilemap->tile_width * 0.5f; // move origin back to top-left
 
     int fb_width, fb_height;
     GetWindowFramebufferSize(&fb_width, &fb_height);
 
     result.x += fb_width*0.5f; // center the tilemap horizontally
 
-    int tile_map_center_y = tilemap.tile_height * tilemap.rows * TILEMAP_ROTATION * 0.5f;
+    int tile_map_center_y = tilemap->tile_height * tilemap->rows * TILEMAP_ROTATION * 0.5f;
     int fb_center_y = fb_height*0.5f;
     int center_y_offset = fb_center_y - tile_map_center_y;
     result.y += center_y_offset; // center the tilemap vertically
 
+    result += tilemap->position;
+
     return result;
 }
 
-v2 ScreenToTile(int x, int y, Tilemap tilemap) {
+v2 ScreenToTile(int x, int y, Tilemap *tilemap) {
     mat2 transform = CreateTilemapTransform(tilemap);
     mat2 inv = Inverse(transform);
 
@@ -84,13 +93,14 @@ v2 ScreenToTile(int x, int y, Tilemap tilemap) {
     int fb_width, fb_height;
     GetWindowFramebufferSize(&fb_width, &fb_height);
 
-    screen_coords.x -= fb_width*0.5f; // center the tilemap horizontally
+    screen_coords.x -= fb_width*0.5f; // un-center the tilemap horizontally
 
-    int tile_map_center_y = tilemap.tile_height * tilemap.rows * TILEMAP_ROTATION * 0.5f;
+    int tile_map_center_y = tilemap->tile_height * tilemap->rows * TILEMAP_ROTATION * 0.5f;
     int fb_center_y = fb_height*0.5f;
     int center_y_offset = fb_center_y - tile_map_center_y;
-    screen_coords.y -= center_y_offset; // center the tilemap vertically
+    screen_coords.y -= center_y_offset; // un-center the tilemap vertically
 
+    screen_coords -= tilemap->position;
 
     v2 result = MMul(inv, screen_coords);
 
@@ -110,26 +120,20 @@ void UpdateAndRender(GameState *state) {
     v4 line_color = { 0.0f, 0.0f, 1.0f, 1.0f };
     v4 fill_color = { .50f, .50f, 1.0f, 1.0f };
 
-    Texture temp = state->test_texture;
-    temp.width = state->test_texture.width;
-    temp.height = state->test_texture.height;
+    v2 t = ScreenToTile(fb_width*0.5, fb_height*0.5, &state->tilemap);
 
-    v2 t = ScreenToTile(fb_width*0.5, fb_height*0.5, state->tilemap);
-
-    v2 cursor_tile = ScreenToTile(platform.cursor_x, platform.cursor_y, state->tilemap);
-    printf("%d, %d\n", (int)cursor_tile.x, (int)cursor_tile.y);
+    v2 cursor_tile = ScreenToTile(platform.cursor_x, platform.cursor_y, &state->tilemap);
 
     for (int r = 0; r < state->tilemap.rows; ++r) {
         for (int c = 0; c < state->tilemap.columns; ++c) {
-            v2 screen_coords = TileToScreen(c, r, state->tilemap);
-            screen_coords.x += state->view_offset_x;
-            screen_coords.y += state->view_offset_y;
+            v2 screen_coords = TileToScreen(c, r, &state->tilemap);
 
             if (r == (int)cursor_tile.y && c == (int)cursor_tile.x) {
                 screen_coords.y -= 20;
             }
 
             DrawTexture(state->test_texture, screen_coords.x, screen_coords.y);
+            //DrawTextureRect(state->atlas, screen_coords.x, screen_coords.y, 0, 0, 256, 192);
         }
     }
 
@@ -169,7 +173,9 @@ void InitializeGameState(GameState *state) {
     state->tilemap.columns = 10;
     state->tilemap.rows = 10;
 
-    state->test_texture = LoadTexture("C:/work/projects/eco-strategy/assets/isometric-asset-pack/256x192Tile.png");
+    LoadTexture("assets/isometric-asset-pack/256x192 Tiles.png", &state->atlas);
+    LoadTexture("C:/work/projects/eco-strategy/assets/isometric-asset-pack/256x192Tile.png", &state->test_texture);
+    LoadFont("assets/FiraMono-Regular.ttf", 1024, 1024, &state->font);
 }
 
 void ProcessInputEvents(GameState *state) {
@@ -189,8 +195,8 @@ void ProcessInputEvents(GameState *state) {
                 //state->view_offset_x += offset.x;
                 //state->view_offset_y += offset.y;
 
-                state->view_offset_x += event.dx;
-                state->view_offset_y += event.dy;
+                state->tilemap.position.x += event.dx;
+                state->tilemap.position.y += event.dy;
             }
         }
 

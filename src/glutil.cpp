@@ -73,6 +73,28 @@ inline v2 operator*(v2 &a, f32 b) {
     return result;
 }
 
+inline v2 operator+=(v2 &a, v2 &b) {
+    a.x = a.x+b.x;
+    a.y = a.y+b.y;
+    return a;
+}
+
+inline v2 operator+=(v2 &a, f32 b) {
+    a = a + b;
+    return a;
+}
+
+inline v2 operator-=(v2 &a, v2 &b) {
+    a.x = a.x-b.x;
+    a.y = a.y-b.y;
+    return a;
+}
+
+inline v2 operator-=(v2 &a, f32 b) {
+    a = a - b;
+    return a;
+}
+
 f32 Length(v2 a) {
     f32 result = sqrt(a.x*a.x + a.y*a.y);
     return result;
@@ -206,7 +228,7 @@ struct Font {
     int bitmap_width;
     int bitmap_height;
     u8 *bitmap;
-    GLuint texture;
+    Texture texture;
 };
 
 struct FontVertex {
@@ -281,6 +303,17 @@ void LoadFont(const char *filename, int bitmap_width, int bitmap_height, Font *f
     size_t ttf_buffer_size;
     u8 *ttf_buffer = (u8 *)ReadEntireFile(filename, &ttf_buffer_size);
 
+    stbtt_fontinfo font_info;
+    stbtt_InitFont(&font_info, ttf_buffer, stbtt_GetFontOffsetForIndex(ttf_buffer, 0));
+
+    int width, height, x_offset, y_offset;
+    u8 *mono_bitmap = stbtt_GetCodepointBitmap(&font_info, 0, stbtt_ScaleForPixelHeight(&font_info, 128.0f),
+                                               '?', &width, &height, &x_offset, &y_offset);
+
+    stbtt_FreeBitmap(mono_bitmap, 0);
+
+    return;
+
     int bitmap_size = bitmap_width * bitmap_height;
     u8 *bitmap = (u8 *)malloc(bitmap_size);
     memset(bitmap, 0, bitmap_size);
@@ -291,10 +324,17 @@ void LoadFont(const char *filename, int bitmap_width, int bitmap_height, Font *f
     int num_chars = 96;
     stbtt_BakeFontBitmap(ttf_buffer, offset, pixel_height, bitmap, bitmap_width, bitmap_height, first_char, num_chars, font->char_data);
 
-    glGenTextures(1, &font->texture);
-    glBindTexture(GL_TEXTURE_2D, font->texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, 512, 512, 0, GL_ALPHA, GL_UNSIGNED_BYTE, bitmap);
+    int texture_width = 512;
+    int texture_height = 512;
+    GLuint texture_id;
+    glGenTextures(1, &texture_id);
+    glBindTexture(GL_TEXTURE_2D, texture_id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, texture_width, texture_height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, bitmap);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    font->texture.width = texture_width;
+    font->texture.height = texture_height;
+    font->texture.id = texture_id;
 
     font->bitmap_width = bitmap_width;
     font->bitmap_height = bitmap_height;
@@ -305,7 +345,7 @@ void DrawText(Font *font, float x, float y, char *text, int text_length) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, font->texture);
+    glBindTexture(GL_TEXTURE_2D, font->texture.id);
 
     // TODO: Use temp allocator
     int vertex_count = 4 * text_length;
@@ -341,7 +381,7 @@ void DrawText(Font *font, float x, float y, char *text, int text_length) {
 
 void FreeFont(Font *font) {
     if (font->bitmap) free(font->bitmap);
-    if (font->texture) glDeleteTextures(1, &font->texture);
+    if (font->texture.id) glDeleteTextures(1, &font->texture.id);
     *font = {};
 }
 
@@ -499,7 +539,7 @@ void DrawRectangle(int left, int right, int top, int bottom, v4 color) {
     glDrawArrays(GL_TRIANGLES, 0, CountOf(verts));
 }
 
-Texture LoadTexture(const char *filename) {
+void LoadTexture(const char *filename, Texture *texture) {
     stbi_set_flip_vertically_on_load(true);
 
     Texture result = {};
@@ -522,7 +562,7 @@ Texture LoadTexture(const char *filename) {
         fprintf(stderr, "Failed to load texture: %s\n", stbi_failure_reason());
     }
 
-    return result;
+    *texture = result;
 }
 
 void DrawTexture(Texture texture, int x, int y) {
@@ -561,6 +601,52 @@ void DrawPixel(int x, int y, v4 color, f32 size) {
     glBindVertexArray(glutil_basic_vao);
     glBindTexture(GL_TEXTURE_2D, glutil_sampler_2d);
     glDrawArrays(GL_POINTS, 0, 1);
+}
+
+void DrawTextureRect(Texture texture, int px, int py, int tx, int ty, int width, int height) {
+    int fb_width, fb_height;
+    GetWindowFramebufferSize(&fb_width, &fb_height);
+
+    f32 l = (f32)px;
+    f32 r = (f32)px + width;
+    f32 b = (f32)py + height;
+    f32 t = (f32)py;
+
+    v3 bl = ScreenToNDC({l, b, 0}, fb_width, fb_height);
+    v3 tr = ScreenToNDC({r, t, 0}, fb_width, fb_height);
+    v3 tl = ScreenToNDC({l, t, 0}, fb_width, fb_height);
+    v3 br = ScreenToNDC({r, b, 0}, fb_width, fb_height);
+
+    f32 uvl = (f32)tx;
+    f32 uvr = (f32)tx + width;
+    f32 uvb = (f32)ty + height;
+    f32 uvt = (f32)ty;
+
+    v2 bl_uv = { uvl / texture.width, 1 - (uvb / texture.height) };
+    v2 tr_uv = { uvr / texture.width, 1 - (uvt / texture.height) };
+    v2 tl_uv = { uvl / texture.width, 1 - (uvt / texture.height) };
+    v2 br_uv = { uvr / texture.width, 1 - (uvb / texture.height) };
+
+    GLUtilVertex verts[] = {
+        { bl, bl_uv },
+        { tr, tr_uv },
+        { tl, tl_uv },
+
+        { bl, bl_uv },
+        { br, br_uv },
+        { tr, tr_uv },
+    };
+
+    glNamedBufferSubData(glutil_basic_vbo, 0, sizeof(verts), verts);
+
+    v4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    glUseProgram(glutil_basic_program);
+    int color_location = glGetUniformLocation(glutil_basic_program, "color");
+    glUniform4fv(color_location, 1, (f32*)&color);
+    glBindVertexArray(glutil_basic_vao);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    glDrawArrays(GL_TRIANGLES, 0, CountOf(verts));
 }
 
 void MathTest() {
@@ -635,6 +721,28 @@ void MathTest() {
     Assert(m.c0.y == -2);
     Assert(m.c1.x == -0.5);
     Assert(m.c1.y == 3/2.0f);
+
+    a = {1,3};
+    b = {2,2};
+    a += b;
+    Assert(a.x == 3);
+    Assert(a.y == 5);
+
+    a = {4,1};
+    a += 3;
+    Assert(a.x == 7);
+    Assert(a.y == 4);
+
+    a = {4,1};
+    b = {1,4};
+    a -= b;
+    Assert(a.x == 3);
+    Assert(a.y == -3);
+
+    a = {};
+    a -= 1.0f;
+    Assert(a.x == -1);
+    Assert(a.y == -1);
 }
 
 
