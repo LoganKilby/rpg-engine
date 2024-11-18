@@ -1,5 +1,12 @@
 #include "glutil.cpp"
 
+static Arena scratch_arena;
+static Arena persist_arena;
+
+enum GameAsset {
+
+};
+
 /*
     https://www.youtube.com/watch?v=04oQ2jOUjkU&t=254s&ab_channel=SimonDev
     i,j
@@ -17,17 +24,21 @@ struct Tilemap {
     int columns;
     int tile_width;
     int tile_height;
-
-    v2 position;
 };
 
-struct TileIndex {
-    int row;
-    int column;
+struct TileInfo {
+
+};
+
+struct Camera {
+    v2 position;
+    f32 zoom;
 };
 
 struct GameState {
     b32 initialized;
+
+    Camera camera;
 
     Tilemap tilemap;
     Font font;
@@ -43,6 +54,7 @@ void PrintInputEvent(InputEvent *event);
 void InitializeGameState(GameState *state);
 void ProcessInputEvents(GameState *state);
 
+#define ZOOM_INCREMENT 0.05f
 #define TILEMAP_ROTATION (2 / 3.0f)
 #define PAN_SPEED 15
 
@@ -59,12 +71,13 @@ mat2 CreateTilemapTransform(Tilemap *tilemap) {
     return result;
 }
 
-v2 TileToScreen(int tile_x, int tile_y, Tilemap *tilemap) {
+v2 TileToScreen(int tile_x, int tile_y, Tilemap *tilemap, Camera camera) {
     mat2 transform = CreateTilemapTransform(tilemap);
 
     v2 result = MMul(transform, {(f32)tile_x, (f32)tile_y});
 
     result.x -= tilemap->tile_width * 0.5f; // move origin back to top-left
+    //result.y -= tilemap->tile_height * 0.5f;
 
     int fb_width, fb_height;
     GetWindowFramebufferSize(&fb_width, &fb_height);
@@ -76,35 +89,42 @@ v2 TileToScreen(int tile_x, int tile_y, Tilemap *tilemap) {
     int center_y_offset = fb_center_y - tile_map_center_y;
     result.y += center_y_offset; // center the tilemap vertically
 
-    result += tilemap->position;
+    result += camera.position;
 
     return result;
 }
 
-v2 ScreenToTile(int x, int y, Tilemap *tilemap) {
+v2 ScreenToTile(int x, int y, Tilemap *tilemap, Camera camera) {
     mat2 transform = CreateTilemapTransform(tilemap);
     mat2 inv = Inverse(transform);
 
     v2 screen_coords = { (f32)x, (f32)y };
 
-
-    //screen_coords.x += tilemap.tile_width * 0.5f; // move origin back to top-left
+    // I'm a little confused why we don't need to undo this operation...
+    //screen_coords.x += tilemap->tile_width * 0.5f; // move origin back to top-left
 
     int fb_width, fb_height;
     GetWindowFramebufferSize(&fb_width, &fb_height);
 
-    screen_coords.x -= fb_width*0.5f; // un-center the tilemap horizontally
-
     int tile_map_center_y = tilemap->tile_height * tilemap->rows * TILEMAP_ROTATION * 0.5f;
     int fb_center_y = fb_height*0.5f;
     int center_y_offset = fb_center_y - tile_map_center_y;
-    screen_coords.y -= center_y_offset; // un-center the tilemap vertically
 
-    screen_coords -= tilemap->position;
+    // move the tilemap back to top left
+    screen_coords.x -= fb_width*0.5f;
+    screen_coords.y -= center_y_offset;
+
+    // offset from the tilemaps current position
+    screen_coords -= camera.position;
 
     v2 result = MMul(inv, screen_coords);
 
     return result;
+}
+
+v2 Scale(v2 p, f32 width, f32 height, f32 s) {
+    v2 ps = p * s;
+    return ps;
 }
 
 void UpdateAndRender(GameState *state) {
@@ -120,20 +140,46 @@ void UpdateAndRender(GameState *state) {
     v4 line_color = { 0.0f, 0.0f, 1.0f, 1.0f };
     v4 fill_color = { .50f, .50f, 1.0f, 1.0f };
 
-    v2 t = ScreenToTile(fb_width*0.5, fb_height*0.5, &state->tilemap);
+    int num_tiles = state->atlas.width * state->atlas.height / (256.0f * 192.0f);
+    fprintf(stdout, "Num tiles %d\n", num_tiles);
 
-    v2 cursor_tile = ScreenToTile(platform.cursor_x, platform.cursor_y, &state->tilemap);
+
+
+    v2 t = ScreenToTile(fb_width*0.5, fb_height*0.5, &state->tilemap, state->camera);
+
+    v2 cursor_tile = ScreenToTile(platform.cursor_x, platform.cursor_y, &state->tilemap, state->camera);
 
     for (int r = 0; r < state->tilemap.rows; ++r) {
         for (int c = 0; c < state->tilemap.columns; ++c) {
-            v2 screen_coords = TileToScreen(c, r, &state->tilemap);
+            v2 screen_coords = TileToScreen(c, r, &state->tilemap, state->camera);
 
             if (r == (int)cursor_tile.y && c == (int)cursor_tile.x) {
                 screen_coords.y -= 20;
             }
 
-            DrawTexture(state->test_texture, screen_coords.x, screen_coords.y);
-            //DrawTextureRect(state->atlas, screen_coords.x, screen_coords.y, 0, 0, 256, 192);
+            //screen_coords = Scale(screen_coords, state->camera.zoom);
+
+
+            Rect dest_rect = {
+                screen_coords.x,
+                screen_coords.y,
+                (f32)state->tilemap.tile_width,
+                (f32)state->tilemap.tile_height
+            };
+
+            Rect uv_rect = {
+                r * 256.0f,
+                c * 192.0f,
+                256,
+                192
+            };
+
+            //DrawTexture(state->test_texture, screen_coords.x, screen_coords.y);
+            //DrawTextureRect(state->atlas, screen_coords.x, screen_coords.y, r * 256, c * 192, 256, 192);
+            DrawTextureRect(state->atlas, dest_rect, uv_rect);
+            DrawPixel(screen_coords.x, screen_coords.y, fill_color, 5);
+
+
         }
     }
 
@@ -168,14 +214,19 @@ void PrintInputEvent(InputEvent *event) {
 void InitializeGameState(GameState *state) {
     state->initialized = true;
 
+    scratch_arena = CreateArena(Kilobytes(16));
+    persist_arena = CreateArena(Kilobytes(16));
+
     state->tilemap.tile_width = 256;
     state->tilemap.tile_height = 192;
     state->tilemap.columns = 10;
     state->tilemap.rows = 10;
 
+    state->camera.zoom = 1;
+
     LoadTexture("assets/isometric-asset-pack/256x192 Tiles.png", &state->atlas);
     LoadTexture("C:/work/projects/eco-strategy/assets/isometric-asset-pack/256x192Tile.png", &state->test_texture);
-    LoadFont("assets/FiraMono-Regular.ttf", 1024, 1024, &state->font);
+    //LoadFont("assets/FiraMono-Regular.ttf", 1024, 1024, &state->font);
 }
 
 void ProcessInputEvents(GameState *state) {
@@ -190,13 +241,10 @@ void ProcessInputEvents(GameState *state) {
                 // move world
                 v2 delta = { (f32)event.dx, (f32)event.dy };
                 v2 dir = Normalize(delta);
-                v2 offset = VMul(dir, PAN_SPEED);
+                v2 offset = dir * PAN_SPEED;
 
-                //state->view_offset_x += offset.x;
-                //state->view_offset_y += offset.y;
-
-                state->tilemap.position.x += event.dx;
-                state->tilemap.position.y += event.dy;
+                state->camera.position.x += event.dx;
+                state->camera.position.y += event.dy;
             }
         }
 
@@ -208,5 +256,48 @@ void ProcessInputEvents(GameState *state) {
                 case GLFW_KEY_DOWN: state->view_offset_y += PAN_SPEED; break;
             }
         }
+
+        if (event.type == InputEventType::MouseScrollEvent) {
+            state->camera.zoom = Max(state->camera.zoom + event.y * ZOOM_INCREMENT, 0.1f);
+
+            Tilemap *tilemap = &state->tilemap;
+
+            f32 old_tile_width = tilemap->tile_width;
+            f32 old_tile_height = tilemap->tile_height;
+
+            tilemap->tile_width = 256 * state->camera.zoom;
+            tilemap->tile_height = 192 * state->camera.zoom;
+
+
+            f32 dx = (old_tile_width - tilemap->tile_width) * 0.5f;
+            f32 dy = (old_tile_height - tilemap->tile_height) * 0.5f;
+            v2 d = { dx, dy };
+            state->camera.position.x += dx;
+            state->camera.position.y += dy;
+        }
     }
+}
+
+void *ArenaAlloc(Arena *arena, u64 count) {
+    if (arena->count + count > arena->size) {
+        u64 new_size = arena->size * 2;
+        arena->base_address = realloc(arena->base_address, new_size);
+        fprintf(stderr, "INFO: Arena resized: (%lld -> %lld)\n", arena->size, new_size);
+        arena->size = new_size;
+    }
+
+    void *result = (u8 *)arena->base_address + arena->count;
+    arena->count += count;
+
+    memset(result, 0, count);
+
+    return result;
+}
+
+Arena CreateArena(u64 size) {
+    Arena result = {};
+    result.base_address = malloc(size);
+    result.size = size;
+
+    return result;
 }

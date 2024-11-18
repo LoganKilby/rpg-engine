@@ -13,6 +13,13 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
 
+struct Rect {
+    f32 x;
+    f32 y;
+    f32 width;
+    f32 height;
+};
+
 struct v4 {
     f32 x, y, z, w;
 };
@@ -92,6 +99,12 @@ inline v2 operator-=(v2 &a, v2 &b) {
 
 inline v2 operator-=(v2 &a, f32 b) {
     a = a - b;
+    return a;
+}
+
+inline v2 operator*=(v2 &a, f32 b) {
+    a.x *= b;
+    a.y *= b;
     return a;
 }
 
@@ -300,6 +313,7 @@ void InitFontRenderer() {
 }
 
 void LoadFont(const char *filename, int bitmap_width, int bitmap_height, Font *font) {
+    // TODO: arena alloc
     size_t ttf_buffer_size;
     u8 *ttf_buffer = (u8 *)ReadEntireFile(filename, &ttf_buffer_size);
 
@@ -544,6 +558,7 @@ void LoadTexture(const char *filename, Texture *texture) {
 
     Texture result = {};
 
+    // TODO(lmk): arena alloc
     int width, height, channels;
     u8 *data = stbi_load(filename, &width, &height, &channels, 0);
 
@@ -552,8 +567,11 @@ void LoadTexture(const char *filename, Texture *texture) {
 
         glGenTextures(1, &result.id);
         glBindTexture(GL_TEXTURE_2D, result.id);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
+
         stbi_image_free(data);
 
         result.width = width;
@@ -601,6 +619,52 @@ void DrawPixel(int x, int y, v4 color, f32 size) {
     glBindVertexArray(glutil_basic_vao);
     glBindTexture(GL_TEXTURE_2D, glutil_sampler_2d);
     glDrawArrays(GL_POINTS, 0, 1);
+}
+
+void DrawTextureRect(Texture texture, Rect dest, Rect texture_rect) {
+    int fb_width, fb_height;
+    GetWindowFramebufferSize(&fb_width, &fb_height);
+
+    f32 l = (f32)dest.x;
+    f32 r = (f32)dest.x + dest.width;
+    f32 b = (f32)dest.y + dest.height;
+    f32 t = (f32)dest.y;
+
+    v3 bl = ScreenToNDC({l, b, 0}, fb_width, fb_height);
+    v3 tr = ScreenToNDC({r, t, 0}, fb_width, fb_height);
+    v3 tl = ScreenToNDC({l, t, 0}, fb_width, fb_height);
+    v3 br = ScreenToNDC({r, b, 0}, fb_width, fb_height);
+
+    f32 uvl = (f32)texture_rect.x;
+    f32 uvr = (f32)texture_rect.x + texture_rect.width;
+    f32 uvb = (f32)texture_rect.y + texture_rect.height;
+    f32 uvt = (f32)texture_rect.y;
+
+    v2 bl_uv = { uvl / texture.width, 1 - (uvb / texture.height) };
+    v2 tr_uv = { uvr / texture.width, 1 - (uvt / texture.height) };
+    v2 tl_uv = { uvl / texture.width, 1 - (uvt / texture.height) };
+    v2 br_uv = { uvr / texture.width, 1 - (uvb / texture.height) };
+
+    GLUtilVertex verts[] = {
+        { bl, bl_uv },
+        { tr, tr_uv },
+        { tl, tl_uv },
+
+        { bl, bl_uv },
+        { br, br_uv },
+        { tr, tr_uv },
+    };
+
+    glNamedBufferSubData(glutil_basic_vbo, 0, sizeof(verts), verts);
+
+    v4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    glUseProgram(glutil_basic_program);
+    int color_location = glGetUniformLocation(glutil_basic_program, "color");
+    glUniform4fv(color_location, 1, (f32*)&color);
+    glBindVertexArray(glutil_basic_vao);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    glDrawArrays(GL_TRIANGLES, 0, CountOf(verts));
 }
 
 void DrawTextureRect(Texture texture, int px, int py, int tx, int ty, int width, int height) {
@@ -743,6 +807,11 @@ void MathTest() {
     a -= 1.0f;
     Assert(a.x == -1);
     Assert(a.y == -1);
+
+    a = {5,10};
+    a *= 0.5f;
+    Assert(a.x == 2.5f);
+    Assert(a.y == 5.0f);
 }
 
 

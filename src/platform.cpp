@@ -6,10 +6,7 @@
 #include "platform.h"
 #include <iostream>
 
-
-
 static PlatformServiceContext platform;
-static Arena scratch_arena;
 
 #include "game.cpp"
 
@@ -28,8 +25,6 @@ void APIENTRY glDebugOutput(GLenum source, GLenum type, unsigned int id, GLenum 
 
 int main() {
     MathTest();
-
-    scratch_arena = CreateArena(Kilobytes(16));
 
     if (!glfwInit()) return -1;
 
@@ -275,29 +270,7 @@ bool InitRenderer() {
     return true;
 }
 
-void *ScratchAlloc(u64 count) {
-    if (scratch_arena.count + count > scratch_arena.size) {
-        u64 new_size = scratch_arena.size * 2;
-        scratch_arena.base_address = realloc(scratch_arena.base_address, new_size);
-        fprintf(stderr, "INFO: Scratch arena resized: (%lld -> %lld)\n", scratch_arena.size, new_size);
-        scratch_arena.size = new_size;
-    }
 
-    void *result = (u8 *)scratch_arena.base_address + scratch_arena.count;
-    scratch_arena.count += count;
-
-    memset(result, 0, count);
-
-    return result;
-}
-
-Arena CreateArena(u64 size) {
-    Arena result = {};
-    result.base_address = malloc(size);
-    result.size = size;
-
-    return result;
-}
 
 void GetWindowFramebufferSize(int *width, int *height) {
     glfwGetFramebufferSize(platform.window, width, height);

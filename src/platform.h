@@ -13,8 +13,8 @@ typedef float f32;
 #define ArrayCount CountOf
 #define Kilobytes(bytes) (bytes * 1024)
 #define Megabytes(bytes) (Kilobytes(bytes) * 1024)
-#define Min(a, b) (a < b ? a : b)
-#define Max(a, b) (a > b ? a : b)
+#define Min(a, b) a < b ? a : b
+#define Max(a, b) a > b ? a : b
 #define U32_MAX -(u32)1;
 
 #define Assert(expression) if (!(expression)) { *(int *)0 = 0; }
