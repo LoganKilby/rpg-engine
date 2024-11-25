@@ -3,9 +3,31 @@
 static Arena scratch_arena;
 static Arena persist_arena;
 
-enum GameAsset {
-
+enum AssetTag {
+    Tiles,
+    SlopesAndStairs,
+    Flooring,
+    TileOverlay,
+    Objects,
+    UIElements,
+    Cubes,
+    Trees,
+    Count
 };
+
+struct TilemapAsset {
+    Texture texture;
+    int tile_width;
+    int tile_height;
+};
+
+struct TilemapAssetID {
+    int row;
+    int column;
+    AssetTag tag;
+};
+
+#define TILE_WATER_1 { 1, 2, Tiles }
 
 /*
     https://www.youtube.com/watch?v=04oQ2jOUjkU&t=254s&ab_channel=SimonDev
@@ -26,10 +48,6 @@ struct Tilemap {
     int tile_height;
 };
 
-struct TileInfo {
-
-};
-
 struct Camera {
     v2 position;
     f32 zoom;
@@ -37,6 +55,8 @@ struct Camera {
 
 struct GameState {
     b32 initialized;
+
+    TilemapAsset assets[AssetTag::Count];
 
     Camera camera;
 
@@ -55,15 +75,90 @@ void InitializeGameState(GameState *state);
 void ProcessInputEvents(GameState *state);
 
 #define ZOOM_INCREMENT 0.05f
-#define TILEMAP_ROTATION (2 / 3.0f)
+#define TILEMAP_ROTATION (2 / 3.0f) // 4 : 3 ?
 #define PAN_SPEED 15
+
+int GetTilemapAssetRows(TilemapAsset *asset) {
+    int result = asset->texture.height / asset->tile_height;
+    return result;
+}
+
+int GetTilemapAssetColumns(TilemapAsset *asset) {
+    int result = asset->texture.width / asset->tile_width;
+    return result;
+}
+
+Rect GetAssetTextureRect(TilemapAssetID id, GameState *state) {
+    TilemapAsset *asset = &state->assets[id.tag];
+
+    int rows = GetTilemapAssetRows(asset);
+    int cols = GetTilemapAssetColumns(asset);
+
+    Rect result = {
+        id.column * (f32)asset->tile_width,
+        id.row * (f32)asset->tile_height,
+        (f32)asset->tile_width,
+        (f32)asset->tile_height
+    };
+
+    return result;
+}
+
+Texture GetAssetTexture(TilemapAssetID id, GameState *state) {
+    Texture result = state->assets[id.tag].texture;
+    return result;
+}
+
+void LoadTilemapAssets(GameState *state) {
+    TilemapAsset *tiles = &state->assets[Tiles];
+    LoadTexture("assets/isometric-asset-pack/256x192 Tiles.png", &tiles->texture);
+    tiles->tile_width = 256;
+    tiles->tile_height = 192;
+
+    TilemapAsset *slopes_and_stairs = &state->assets[SlopesAndStairs];
+    LoadTexture("assets/isometric-asset-pack/256x192 SlopesAndStairs.png", &slopes_and_stairs->texture);
+    slopes_and_stairs->tile_width = 256;
+    slopes_and_stairs->tile_height = 192;
+
+    TilemapAsset *ui_elements = &state->assets[UIElements];
+    LoadTexture("assets/isometric-asset-pack/256x256 UI Elements.png", &ui_elements->texture);
+    ui_elements->tile_width = 256;
+    ui_elements->tile_height = 256;
+
+    TilemapAsset *cubes = &state->assets[Cubes];
+    LoadTexture("assets/isometric-asset-pack/256x256 Cubes.png", &cubes->texture);
+    cubes->tile_width = 256;
+    cubes->tile_height = 256;
+
+    TilemapAsset *objects = &state->assets[Objects];
+    LoadTexture("assets/isometric-asset-pack/256x256 Objects.png", &objects->texture);
+    objects->tile_width = 256;
+    objects->tile_height = 256;
+
+    TilemapAsset *flooring = &state->assets[Flooring];
+    LoadTexture("assets/isometric-asset-pack/256x152 Floorings.png", &flooring->texture);
+    flooring->tile_width = 256;
+    flooring->tile_height = 152;
+
+    TilemapAsset *trees = &state->assets[Trees];
+    LoadTexture("assets/isometric-asset-pack/256x512 Trees.png", &trees->texture);
+    trees->tile_width = 256;
+    trees->tile_height = 512;
+
+    TilemapAsset *overlays = &state->assets[TileOverlay];
+    LoadTexture("assets/isometric-asset-pack/256x128 Tile Overlays.png", &overlays->texture);
+    overlays->tile_width = 256;
+    overlays->tile_height = 128;
+}
+
+// TODO(lmk): transform all tilemap coordinates at once
 
 mat2 CreateTilemapTransform(Tilemap *tilemap) {
     mat2 result;
 
     f32 half_tile_width = tilemap->tile_width * 0.5f;
     f32 half_tile_height = tilemap->tile_height * 0.5f;
-    f32 r = TILEMAP_ROTATION; //0.666666f; // TODO: derive this?
+    f32 r = TILEMAP_ROTATION;
 
     result.c0 = { 1.0f * half_tile_width, r * half_tile_height };
     result.c1 = { -1.0f * half_tile_width, r * half_tile_height };
@@ -130,9 +225,15 @@ v2 Scale(v2 p, f32 width, f32 height, f32 s) {
 void UpdateAndRender(GameState *state) {
     if (!state->initialized) {
         InitializeGameState(state);
+
+        fprintf(stdout, "%d x %d tiles", state->tilemap.columns, state->tilemap.rows);
     }
 
     ProcessInputEvents(state);
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Draw texture preview
 
     int fb_width, fb_height;
     GetWindowFramebufferSize(&fb_width, &fb_height);
@@ -140,14 +241,10 @@ void UpdateAndRender(GameState *state) {
     v4 line_color = { 0.0f, 0.0f, 1.0f, 1.0f };
     v4 fill_color = { .50f, .50f, 1.0f, 1.0f };
 
-    int num_tiles = state->atlas.width * state->atlas.height / (256.0f * 192.0f);
-    fprintf(stdout, "Num tiles %d\n", num_tiles);
-
-
-
-    v2 t = ScreenToTile(fb_width*0.5, fb_height*0.5, &state->tilemap, state->camera);
-
     v2 cursor_tile = ScreenToTile(platform.cursor_x, platform.cursor_y, &state->tilemap, state->camera);
+
+    Texture tile_texture = GetAssetTexture(TILE_WATER_1, state);
+    Rect water_uv_rect = GetAssetTextureRect(TILE_WATER_1, state);
 
     for (int r = 0; r < state->tilemap.rows; ++r) {
         for (int c = 0; c < state->tilemap.columns; ++c) {
@@ -156,9 +253,6 @@ void UpdateAndRender(GameState *state) {
             if (r == (int)cursor_tile.y && c == (int)cursor_tile.x) {
                 screen_coords.y -= 20;
             }
-
-            //screen_coords = Scale(screen_coords, state->camera.zoom);
-
 
             Rect dest_rect = {
                 screen_coords.x,
@@ -174,12 +268,8 @@ void UpdateAndRender(GameState *state) {
                 192
             };
 
-            //DrawTexture(state->test_texture, screen_coords.x, screen_coords.y);
-            //DrawTextureRect(state->atlas, screen_coords.x, screen_coords.y, r * 256, c * 192, 256, 192);
-            DrawTextureRect(state->atlas, dest_rect, uv_rect);
+            DrawTextureRect(tile_texture, dest_rect, water_uv_rect);
             DrawPixel(screen_coords.x, screen_coords.y, fill_color, 5);
-
-
         }
     }
 
@@ -222,19 +312,16 @@ void InitializeGameState(GameState *state) {
     state->tilemap.columns = 10;
     state->tilemap.rows = 10;
 
-    state->camera.zoom = 1;
+    state->camera.zoom = 0.25;
 
     LoadTexture("assets/isometric-asset-pack/256x192 Tiles.png", &state->atlas);
-    LoadTexture("C:/work/projects/eco-strategy/assets/isometric-asset-pack/256x192Tile.png", &state->test_texture);
-    //LoadFont("assets/FiraMono-Regular.ttf", 1024, 1024, &state->font);
+    LoadTilemapAssets(state);
 }
 
 void ProcessInputEvents(GameState *state) {
     InputEvent event;
 
     while (GetNextInputEvent(&event)) {
-        //PrintInputEvent(&event);
-
         if (event.type == InputEventType::CursorPositionEvent) {
             // TODO: Mouse is hovering window
             if (IsButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
@@ -268,10 +355,9 @@ void ProcessInputEvents(GameState *state) {
             tilemap->tile_width = 256 * state->camera.zoom;
             tilemap->tile_height = 192 * state->camera.zoom;
 
-
+            // re-center camera after zoom
             f32 dx = (old_tile_width - tilemap->tile_width) * 0.5f;
             f32 dy = (old_tile_height - tilemap->tile_height) * 0.5f;
-            v2 d = { dx, dy };
             state->camera.position.x += dx;
             state->camera.position.y += dy;
         }

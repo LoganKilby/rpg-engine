@@ -13,6 +13,13 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
 
+#include <glm-1.0.1/glm/glm.hpp>
+#include <glm-1.0.1/glm/gtc/matrix_transform.hpp>
+using namespace glm;
+typedef vec2 v2;
+typedef vec3 v3;
+typedef vec4 v4;
+
 struct Rect {
     f32 x;
     f32 y;
@@ -20,6 +27,15 @@ struct Rect {
     f32 height;
 };
 
+struct Texture {
+    GLuint id;
+    int width;
+    int height;
+};
+
+#define Squared(a) (a*a)
+
+#if 0
 struct v4 {
     f32 x, y, z, w;
 };
@@ -36,14 +52,6 @@ struct mat2 {
     v2 c0;
     v2 c1;
 };
-
-struct Texture {
-    GLuint id;
-    int width;
-    int height;
-};
-
-#define Squared(a) (a*a)
 
 inline v2 operator+(v2 &a, v2 &b) {
     v2 result;
@@ -170,6 +178,7 @@ mat2 Inverse(mat2 m) {
     mat2 result = MMul(m1, 1 / d);
     return result;
 }
+#endif
 
 void ScreenToNDC(f32 *x, f32 *y, int screen_w, int screen_h) {
     f32 tx = *x;
@@ -227,176 +236,6 @@ bool _LinkProgram(GLuint program) {
     }
 
     return status;
-}
-
-struct FontRenderer {
-    GLuint vbo;
-    GLuint vao;
-    GLuint program;
-    int max_vertices; // max num vertices
-} static font_renderer;
-
-struct Font {
-    stbtt_bakedchar char_data[96]; // ascii 32..126
-    int bitmap_width;
-    int bitmap_height;
-    u8 *bitmap;
-    Texture texture;
-};
-
-struct FontVertex {
-    f32 x;
-    f32 y;
-    f32 u;
-    f32 v;
-};
-
-void InitFontRenderer() {
-    font_renderer.max_vertices = 512;
-    glGenBuffers(1, &font_renderer.vbo);
-    glGenVertexArrays(1, &font_renderer.vao);
-    glBindVertexArray(font_renderer.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, font_renderer.vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(FontVertex) * font_renderer.max_vertices, 0, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), 0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), (void *)(2 * sizeof(f32)));
-    glEnableVertexAttribArray(1);
-
-    const char *font_vs_source = R"(
-        #version 460
-        layout (location = 0) in vec2 p;
-        layout (location = 1) in vec2 uv;
-
-        out vec2 v_uv;
-
-        uniform float screen_w;
-        uniform float screen_h;
-
-        void main() {
-            float y = -2 * (p.y / screen_h) - 0.5;
-            float x = 2 * (p.x / screen_w) - 0.5;
-            gl_Position = vec4(x, y, 0.0, 1.0);
-        }
-    )";
-
-    const char *font_fs_source = R"(
-        #version 460
-
-        in vec2 v_uv;
-        out vec4 frag_color;
-
-        uniform sampler2D font_atlas;
-
-        void main() {
-            frag_color = texture(font_atlas, v_uv);
-        }
-    )";
-
-    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vs, 1, &font_vs_source, 0);
-    CompileShader(vs);
-
-    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fs, 1, &font_fs_source, 0);
-    CompileShader(fs);
-
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    LinkProgram(program);
-
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-
-    font_renderer.program = program;
-}
-
-void LoadFont(const char *filename, int bitmap_width, int bitmap_height, Font *font) {
-    // TODO: arena alloc
-    size_t ttf_buffer_size;
-    u8 *ttf_buffer = (u8 *)ReadEntireFile(filename, &ttf_buffer_size);
-
-    stbtt_fontinfo font_info;
-    stbtt_InitFont(&font_info, ttf_buffer, stbtt_GetFontOffsetForIndex(ttf_buffer, 0));
-
-    int width, height, x_offset, y_offset;
-    u8 *mono_bitmap = stbtt_GetCodepointBitmap(&font_info, 0, stbtt_ScaleForPixelHeight(&font_info, 128.0f),
-                                               '?', &width, &height, &x_offset, &y_offset);
-
-    stbtt_FreeBitmap(mono_bitmap, 0);
-
-    return;
-
-    int bitmap_size = bitmap_width * bitmap_height;
-    u8 *bitmap = (u8 *)malloc(bitmap_size);
-    memset(bitmap, 0, bitmap_size);
-
-    int offset = 0;
-    f32 pixel_height = 32.0;
-    int first_char = 32;
-    int num_chars = 96;
-    stbtt_BakeFontBitmap(ttf_buffer, offset, pixel_height, bitmap, bitmap_width, bitmap_height, first_char, num_chars, font->char_data);
-
-    int texture_width = 512;
-    int texture_height = 512;
-    GLuint texture_id;
-    glGenTextures(1, &texture_id);
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, texture_width, texture_height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, bitmap);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
-    font->texture.width = texture_width;
-    font->texture.height = texture_height;
-    font->texture.id = texture_id;
-
-    font->bitmap_width = bitmap_width;
-    font->bitmap_height = bitmap_height;
-    font->bitmap = bitmap;
-}
-
-void DrawText(Font *font, float x, float y, char *text, int text_length) {
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, font->texture.id);
-
-    // TODO: Use temp allocator
-    int vertex_count = 4 * text_length;
-    int vert_buffer_size = sizeof(f32) * 8 * text_length;
-    f32 *verts = (f32 *)malloc(vert_buffer_size);
-    memset(verts, 0, vert_buffer_size);
-
-
-    stbtt_aligned_quad q;
-    for (int text_index = 0; text_index < text_length; ++text_index) {
-        char c = text[text_index];
-        if (c >= 32 && c <= 128) {
-            stbtt_GetBakedQuad(font->char_data, font->bitmap_width, font->bitmap_height, c - 32, &x, &y, &q, 1);
-
-            FontVertex *fv = (FontVertex *)verts + text_index * 4;
-
-            fv[0] = { q.x0, q.y0, q.s0, q.t0 };
-            fv[1] = { q.x1, q.y0, q.s1, q.t0 };
-            fv[2] = { q.x1, q.y1, q.s1, q.t1 };
-            fv[3] = { q.x0, q.y1, q.s0, q.t1 };
-        }
-    }
-
-    if (text_length > font_renderer.max_vertices) {
-        int new_vertex_max = font_renderer.max_vertices * 2;
-        glNamedBufferData(font_renderer.vbo, sizeof(FontVertex) * new_vertex_max, 0, GL_DYNAMIC_DRAW);
-        fprintf(stdout, "Info: Font renderer vertex buffer resized (%d -> %d)\n", font_renderer.max_vertices, new_vertex_max);
-        font_renderer.max_vertices = new_vertex_max;
-    }
-
-    glNamedBufferSubData(font_renderer.vbo, 0, vert_buffer_size, verts);
-}
-
-void FreeFont(Font *font) {
-    if (font->bitmap) free(font->bitmap);
-    if (font->texture.id) glDeleteTextures(1, &font->texture.id);
-    *font = {};
 }
 
 static b32 glutil_initialized = false;
@@ -563,13 +402,13 @@ void LoadTexture(const char *filename, Texture *texture) {
     u8 *data = stbi_load(filename, &width, &height, &channels, 0);
 
     if (data) {
-        Assert(channels == 4);
-
         glGenTextures(1, &result.id);
         glBindTexture(GL_TEXTURE_2D, result.id);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, channels == 4 ? GL_RGBA : GL_RGB, width, height, 0, channels == 4 ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
 
         stbi_image_free(data);
@@ -713,105 +552,54 @@ void DrawTextureRect(Texture texture, int px, int py, int tx, int ty, int width,
     glDrawArrays(GL_TRIANGLES, 0, CountOf(verts));
 }
 
-void MathTest() {
-    v2 a;
+static float cube_vertices[] = {
+    -0.5f, -0.5f, -0.5f,  0.0f, 0.0f,
+     0.5f, -0.5f, -0.5f,  1.0f, 0.0f,
+     0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+     0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+    -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f,  0.0f, 0.0f,
 
-    a = { 1, 0 };
-    a = Normalize(a);
-    Assert(a.x == 1);
-    Assert(a.y == 0);
+    -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
+     0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+     0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+     0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+    -0.5f,  0.5f,  0.5f,  0.0f, 1.0f,
+    -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
 
-    a = { 1.0, 1.0 };
-    a = VMul(a, 2.0f);
-    Assert(a.x == 2);
-    Assert(a.y == 2);
+    -0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+    -0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
+    -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
+    -0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
 
-    a = { 3.0, 0 };
-    f32 al = Length(a);
-    Assert(al == 3.0);
+     0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+     0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+     0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
+     0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
+     0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
+     0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
 
-    a = VAdd({ 0, 0 }, 3);
-    Assert(a.x == 3);
-    Assert(a.y == 3);
+    -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
+     0.5f, -0.5f, -0.5f,  1.0f, 1.0f,
+     0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+     0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+    -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
+    -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
 
-    a = VAdd({0, 0}, {3, -3});
-    Assert(a.x == 3);
-    Assert(a.y == -3);
+    -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,
+     0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+     0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+     0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+    -0.5f,  0.5f,  0.5f,  0.0f, 0.0f,
+    -0.5f,  0.5f, -0.5f,  0.0f, 1.0f
+};
 
-    a = { 0, 0 };
-    v2 b = { 1, 1 };
-    v2 c = a + b;
-    Assert(c.x == 1);
-    Assert(c.y == 1);
-
-    a = {};
-    a = a + 1;
-    Assert(a.x == 1);
-    Assert(a.y == 1);
-
-    a = {};
-    b = {1,1};
-    c = a - b;
-    Assert(c.x == -1);
-    Assert(c.y == -1);
-
-    a = {};
-    c = a - 1;
-    Assert(c.x == -1);
-    Assert(c.y == -1);
-
-    a = {1,1};
-    a = a * 0.5f;
-    Assert(a.x == 0.5f);
-    Assert(a.y == 0.5f);
-
-    mat2 m = { {1,3}, {2,4}};
-    v2 v = {5,5};
-    v = MMul(m, v);
-    Assert(v.x == 15);
-    Assert(v.y == 35);
-
-    m = { {4,0}, {1,2} };
-    f32 d = Determinant(m);
-    Assert(d == 8);
-
-    m = { {-6,-1}, {3,1} };
-    d = Determinant(m);
-    Assert(d == -3);
-
-    m = { {3,4}, {1,2} };
-    m = Inverse(m);
-    Assert(m.c0.x == 1);
-    Assert(m.c0.y == -2);
-    Assert(m.c1.x == -0.5);
-    Assert(m.c1.y == 3/2.0f);
-
-    a = {1,3};
-    b = {2,2};
-    a += b;
-    Assert(a.x == 3);
-    Assert(a.y == 5);
-
-    a = {4,1};
-    a += 3;
-    Assert(a.x == 7);
-    Assert(a.y == 4);
-
-    a = {4,1};
-    b = {1,4};
-    a -= b;
-    Assert(a.x == 3);
-    Assert(a.y == -3);
-
-    a = {};
-    a -= 1.0f;
-    Assert(a.x == -1);
-    Assert(a.y == -1);
-
-    a = {5,10};
-    a *= 0.5f;
-    Assert(a.x == 2.5f);
-    Assert(a.y == 5.0f);
-}
+struct Mesh {
+    u32 vao;
+    u32 vbo;
+    int vertex_count;
+};
 
 

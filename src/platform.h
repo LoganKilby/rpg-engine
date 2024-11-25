@@ -62,9 +62,12 @@ struct PlatformServiceContext {
     InputEventQueue input_event_queue;
     int framebuffer_width;
     int framebuffer_height;
+
+    void *memory;
+    u64 memory_size;
 };
 
-bool RegisterInputEvent(InputEvent *event);
+void RegisterInputEvent(InputEvent *event);
 bool GetNextInputEvent(InputEvent *event);
 void *ReadEntireFile(const char *filename, size_t *count);
 void GetWindowFramebufferSize(int *width, int *height);

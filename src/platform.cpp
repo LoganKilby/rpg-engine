@@ -8,7 +8,8 @@
 
 static PlatformServiceContext platform;
 
-#include "game.cpp"
+#include "glutil.cpp"
+#include "rpg.cpp"
 
 void GLFWErrorCallback(int error, const char *desc);
 void GLFWKeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
@@ -24,8 +25,6 @@ void APIENTRY glDebugOutput(GLenum source, GLenum type, unsigned int id, GLenum 
                             GLsizei length, const char *message, const void *userParam);
 
 int main() {
-    MathTest();
-
     if (!glfwInit()) return -1;
 
     glfwSetErrorCallback(GLFWErrorCallback);
@@ -34,10 +33,11 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, true);
-    //glfwWindowHint(GLFW_SAMPLES, 4); // anti-aliasing
+
     platform.window = glfwCreateWindow(1280, 720, "Hello World", nullptr, nullptr);
 
     if (!platform.window) {
+        printf("Unable to create GLFW window\n");
         glfwTerminate();
         return -1;
     }
@@ -56,8 +56,8 @@ int main() {
 
     if (!InitRenderer()) return -1;
 
-    GameState *state = (GameState *)malloc(sizeof(GameState));
-    memset(state, 0, sizeof(GameState));
+    platform.memory = malloc(Kilobytes(16));
+    memset(platform.memory, 0, Kilobytes(16));
 
     double last_frame_time = glfwGetTime();
 
@@ -66,24 +66,22 @@ int main() {
         platform.delta_time = current_frame_time - last_frame_time;
         last_frame_time = current_frame_time;
 
-        glClear(GL_COLOR_BUFFER_BIT);
-        UpdateAndRender(state);
+        UpdateAndRender();
+
         glfwSwapBuffers(platform.window);
         glfwPollEvents();
     }
 }
 
-bool RegisterInputEvent(InputEvent *event) {
-    bool result = false;
-
-    if (platform.input_event_queue.count < CountOf(InputEventQueue::events)) {
+void RegisterInputEvent(InputEvent *event) {
+    if (platform.input_event_queue.count < ArrayCount(InputEventQueue::events)) {
         platform.input_event_queue.events[platform.input_event_queue.count++] = *event;
-        result = true;
     } else {
-        Assert(0); // storage is full
+        for (int i = 0; i < ArrayCount(platform.input_event_queue.events) - 1; ++i) {
+            platform.input_event_queue.events[i] = platform.input_event_queue.events[i + 1];
+        }
+        platform.input_event_queue.events[platform.input_event_queue.count - 1] = *event;
     }
-
-    return result;
 }
 
 bool GetNextInputEvent(InputEvent *event) {
@@ -257,20 +255,16 @@ bool InitRenderer() {
         fprintf(stdout, "OpenGL Debug Context\n");
     }
 
+    glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glEnable(GL_LINE_SMOOTH);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glClearColor(0, 0, 0, 1);
 
-    // TODO: default font
-    InitFontRenderer();
-
     InitializeUtilBuffers();
 
     return true;
 }
-
-
 
 void GetWindowFramebufferSize(int *width, int *height) {
     glfwGetFramebufferSize(platform.window, width, height);
