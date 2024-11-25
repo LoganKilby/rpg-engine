@@ -14,13 +14,13 @@ struct GameState {
 
     Mesh cube;
     Camera camera;
-
     mat4 projection;
-
     Texture wall;
+
+    v3 hero_position;
 };
 
-void DrawMesh(Mesh, v4);
+void DrawMesh(Mesh, v3, v4);
 Camera *GetCamera();
 
 void UpdateAndRender() {
@@ -63,7 +63,7 @@ void UpdateAndRender() {
 
     /* TODO:
         [x] draw a textured 3D cube
-        [] move textured cube around
+        [x] move textured cube around
         [] orbit camera controls attached to cube
         [] fill scene with objects
         [] lighting
@@ -76,19 +76,36 @@ void UpdateAndRender() {
         [] make a game
     */
 
+#if 0
     Camera *camera = GetCamera();
     float radius = 10.0f;
     float camX = static_cast<float>(sin(glfwGetTime()) * radius);
     float camZ = static_cast<float>(cos(glfwGetTime()) * radius);
     camera->position = glm::vec3(camX, 0.0f, camZ);
     camera->target = {};
+#endif
 
+    if (IsKeyPressed(GLFW_KEY_W)) {
+        state->hero_position.z -= 1 * platform.delta_time;
+    }
+
+    if (IsKeyPressed(GLFW_KEY_S)) {
+        state->hero_position.z += 1 * platform.delta_time;
+    }
+
+    if (IsKeyPressed(GLFW_KEY_Q)) {
+        state->hero_position.x -= 1 * platform.delta_time;
+    }
+
+    if (IsKeyPressed(GLFW_KEY_E)) {
+        state->hero_position.x += 1 * platform.delta_time;
+    }
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     u32 temp = glutil_sampler_2d;
     glutil_sampler_2d = state->wall.id;
-    DrawMesh(state->cube, {1,1,1,1});
+    DrawMesh(state->cube, state->hero_position, {1,1,1,1});
     glutil_sampler_2d = temp;
 }
 
@@ -145,7 +162,7 @@ Camera *GetCamera() {
     return &state->camera;
 }
 
-void DrawMesh(Mesh mesh, v4 color) {
+void DrawMesh(Mesh mesh, v3 position, v4 color) {
     static b32 initialized = false;
     static u32 program = 0;
 
@@ -158,10 +175,11 @@ void DrawMesh(Mesh mesh, v4 color) {
             out vec2 vuv;
 
             uniform mat4 view;
+            uniform mat4 model;
             uniform mat4 projection;
 
             void main() {
-                gl_Position = projection * view * vec4(p, 1.0);
+                gl_Position = projection * view * model * vec4(p, 1.0);
                 vuv = uv;
             }
         )";
@@ -206,6 +224,9 @@ void DrawMesh(Mesh mesh, v4 color) {
     mat4 projection;
     GetProjectionTransform(&projection);
 
+    mat4 model = mat4(1.0f);
+    model = translate(model, position);
+
     glUseProgram(program);
     u32 color_location = glGetUniformLocation(program, "color");
     glUniform4fv(color_location, 1, (f32*)&color);
@@ -215,6 +236,9 @@ void DrawMesh(Mesh mesh, v4 color) {
 
     u32 projection_location = glGetUniformLocation(program, "projection");
     glUniformMatrix4fv(projection_location, 1, GL_FALSE, (f32*)&projection);
+
+    u32 model_location = glGetUniformLocation(program, "model");
+    glUniformMatrix4fv(model_location, 1, GL_FALSE, (f32*)&model);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, glutil_sampler_2d);

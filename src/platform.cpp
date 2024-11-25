@@ -273,3 +273,8 @@ void GetWindowFramebufferSize(int *width, int *height) {
 bool IsButtonPressed(int button) {
     return glfwGetMouseButton(platform.window, button) == GLFW_PRESS;
 }
+
+bool IsKeyPressed(int key) {
+    bool result = glfwGetKey(platform.window, key) == GLFW_PRESS;
+    return result;
+}

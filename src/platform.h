@@ -72,6 +72,7 @@ bool GetNextInputEvent(InputEvent *event);
 void *ReadEntireFile(const char *filename, size_t *count);
 void GetWindowFramebufferSize(int *width, int *height);
 bool IsButtonPressed(int button);
+bool IsKeyPressed(int key);
 
 struct Arena {
     void *base_address;
