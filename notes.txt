@@ -1,9 +1,0 @@
-[ ] fullscreen
-[ ] font rendering
-[ ] audio
-[ ] texture loading
-[ ] texture drawing
-[ ] player horizontal movement
-[ ] player physics and vertical movement (jumping, falling)
-[ ] sprite animation
-[ ] default font
