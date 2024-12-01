@@ -73,6 +73,7 @@ void *ReadEntireFile(const char *filename, size_t *count);
 void GetWindowFramebufferSize(int *width, int *height);
 bool IsButtonPressed(int button);
 bool IsKeyPressed(int key);
+double GetFrameTime();
 
 struct Arena {
     void *base_address;

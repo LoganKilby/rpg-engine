@@ -5,8 +5,12 @@ void *ArenaAlloc(Arena *arena, u64 count);
 Arena CreateArena(void *base_address, u64 size);
 
 struct Camera {
-    v3 position;
+    //v3 position;
     v3 target;
+
+    f32 azimuth;
+    f32 polar;
+    f32 radius;
 };
 
 struct GameState {
@@ -21,7 +25,11 @@ struct GameState {
 };
 
 void DrawMesh(Mesh, v3, v4);
-Camera *GetCamera();
+
+Camera *GetGameCamera();
+v3 GetCameraEye(Camera *);
+void RotateLeft(Camera *, f32);
+void RotateUp(Camera *, f32);
 
 void UpdateAndRender() {
     GameState *state = (GameState *)platform.memory;
@@ -46,7 +54,8 @@ void UpdateAndRender() {
         state->cube = cube;
 
         Camera *camera = &state->camera;
-        camera->position = {0,0,3};
+        //camera->position = {0,0,0};
+        camera->radius = 3;
         camera->target = {};
 
         int w,h;
@@ -76,8 +85,9 @@ void UpdateAndRender() {
         [] make a game
     */
 
+
+    Camera *camera = GetGameCamera();
 #if 0
-    Camera *camera = GetCamera();
     float radius = 10.0f;
     float camX = static_cast<float>(sin(glfwGetTime()) * radius);
     float camZ = static_cast<float>(cos(glfwGetTime()) * radius);
@@ -86,20 +96,40 @@ void UpdateAndRender() {
 #endif
 
     if (IsKeyPressed(GLFW_KEY_W)) {
-        state->hero_position.z -= 1 * platform.delta_time;
+        //state->hero_position.z -= 1 * platform.delta_time;
+        RotateLeft(camera, 0.1f);
     }
 
     if (IsKeyPressed(GLFW_KEY_S)) {
-        state->hero_position.z += 1 * platform.delta_time;
+        //state->hero_position.z += 1 * platform.delta_time;
+        RotateUp(camera, 0.1f);
     }
 
-    if (IsKeyPressed(GLFW_KEY_Q)) {
+    if (IsKeyPressed(GLFW_KEY_Q) || IsKeyPressed(GLFW_KEY_A)) {
         state->hero_position.x -= 1 * platform.delta_time;
     }
 
-    if (IsKeyPressed(GLFW_KEY_E)) {
+    if (IsKeyPressed(GLFW_KEY_E) || IsKeyPressed(GLFW_KEY_D)) {
         state->hero_position.x += 1 * platform.delta_time;
     }
+
+    InputEvent input_event;
+    while (GetNextInputEvent(&input_event)) {
+        if (input_event.type == CursorPositionEvent) {
+            if (IsButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
+                // change the hero and camera direction
+            } else if (IsButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+                // change the camera direction
+                f32 rotate_speed = 0.1f;
+                v2 rotation = v2((f32)input_event.dx, (f32)input_event.dy) * rotate_speed * (f32)platform.delta_time;
+                RotateLeft(camera, rotation.x);
+                RotateUp(camera, rotation.y);
+            }
+        }
+    }
+
+    /* child-parent update if camera is anchored to hero */
+    camera->target = state->hero_position;
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -147,20 +177,47 @@ void GetProjectionTransform(mat4 *m) {
     *m = state->projection;
 }
 
-void GetCameraDirection(Camera *camera, v3 *direction) {
-    v3 result = normalize(camera->position - camera->target);
-    *direction = result;
+v3 GetCameraDirection(Camera *camera) {
+    v3 position = GetCameraEye(camera);
+    v3 result = normalize(position - camera->target);
+
+    return result;
 }
 
 void GetCameraTransform(Camera *camera, mat4 *t) {
-    mat4 result = lookAt(camera->position, camera->target, {0,1,0});
+    v3 eye = GetCameraEye(camera);
+    mat4 result = lookAt(eye, camera->target, {0,1,0});
     *t = result;
 }
 
-Camera *GetCamera() {
+Camera *GetGameCamera() {
     GameState *state = (GameState *)platform.memory;
     return &state->camera;
 }
+
+v3 GetCameraEye(Camera *camera) {
+    f32 radius = camera->radius;
+    f32 a = camera->azimuth;
+    f32 p = camera->polar;
+    v3 target = camera->target;
+
+    v3 result;
+    result.x = target.x + radius * cos(p) * cos(a);
+    result.y = target.y + radius * sin(p);
+    result.z = target.z + radius * cos(p) * sin(a);
+
+    return result;
+}
+
+void RotateLeft(Camera *camera, f32 radians) {
+    camera->azimuth += radians;
+}
+
+void RotateUp(Camera *camera, f32 radians) {
+    f32 polar_cap = (glm::pi<f32>() / 2.0) - 0.001f;
+    camera->polar = glm::clamp(camera->polar += radians, -polar_cap, polar_cap);
+}
+
 
 void DrawMesh(Mesh mesh, v3 position, v4 color) {
     static b32 initialized = false;
@@ -216,7 +273,7 @@ void DrawMesh(Mesh mesh, v3 position, v4 color) {
         initialized = true;
     }
 
-    Camera *camera = GetCamera();
+    Camera *camera = GetGameCamera();
 
     mat4 view;
     GetCameraTransform(camera, &view);
