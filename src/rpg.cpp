@@ -16,6 +16,8 @@ struct Camera {
 struct GameState {
     b32 initialized;
 
+    mat4 hero_basis;
+
     Mesh cube;
     Camera camera;
     mat4 projection;
@@ -24,10 +26,16 @@ struct GameState {
     v3 hero_position;
 };
 
-void DrawMesh(Mesh, v3, v4);
+struct RenderObject {
+
+};
+
+void DrawMesh(Mesh, v3, v4, mat4 *);
+void DrawLine(v3 a, v3 b, v4 color);
 
 Camera *GetGameCamera();
 v3 GetCameraEye(Camera *);
+v3 GetCameraViewVector(Camera *);
 void RotateLeft(Camera *, f32);
 void RotateUp(Camera *, f32);
 
@@ -55,13 +63,17 @@ void UpdateAndRender() {
 
         Camera *camera = &state->camera;
         //camera->position = {0,0,0};
-        camera->radius = 3;
+        camera->radius = 6;
         camera->target = {};
+
+        RotateLeft(camera, radians(90.0f));
+        RotateUp(camera, radians(45.0f));
 
         int w,h;
         glfwGetFramebufferSize(platform.window, &w, &h);
 
         state->projection = perspective(radians(45.0f), (float)w / (float)h, 0.1f, 100.0f);
+        state->hero_basis = mat4(1.0f);
 
         LoadTexture("assets/wall.jpg", &state->wall);
 
@@ -73,6 +85,7 @@ void UpdateAndRender() {
     /* TODO:
         [x] draw a textured 3D cube
         [x] move textured cube around
+        [] draw 3D line
         [] orbit camera controls attached to cube
         [] fill scene with objects
         [] lighting
@@ -96,13 +109,11 @@ void UpdateAndRender() {
 #endif
 
     if (IsKeyPressed(GLFW_KEY_W)) {
-        //state->hero_position.z -= 1 * platform.delta_time;
-        RotateLeft(camera, 0.1f);
+        state->hero_position.z -= 1 * platform.delta_time;
     }
 
     if (IsKeyPressed(GLFW_KEY_S)) {
-        //state->hero_position.z += 1 * platform.delta_time;
-        RotateUp(camera, 0.1f);
+        state->hero_position.z += 1 * platform.delta_time;
     }
 
     if (IsKeyPressed(GLFW_KEY_Q) || IsKeyPressed(GLFW_KEY_A)) {
@@ -117,7 +128,23 @@ void UpdateAndRender() {
     while (GetNextInputEvent(&input_event)) {
         if (input_event.type == CursorPositionEvent) {
             if (IsButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
-                // change the hero and camera direction
+                f32 rotate_speed = 0.1f;
+                v2 rotation = v2((f32)input_event.dx, (f32)input_event.dy) * rotate_speed * (f32)platform.delta_time;
+                RotateLeft(camera, rotation.x);
+                RotateUp(camera, rotation.y);
+
+
+                v3 eye = GetCameraEye(camera);
+                v3 front = normalize(camera->target - eye);
+                front.y = 0;
+                front = normalize(front);
+                v3 right = normalize(cross(front, v3(0, 1, 0)));
+                v3 up    = normalize(cross(right, front));
+
+                state->hero_basis[0] = v4(right, 0);
+                state->hero_basis[1] = v4(up, 0);
+                state->hero_basis[2] = v4(front, 0);
+
             } else if (IsButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
                 // change the camera direction
                 f32 rotate_speed = 0.1f;
@@ -126,6 +153,12 @@ void UpdateAndRender() {
                 RotateUp(camera, rotation.y);
             }
         }
+
+        if (input_event.type == MouseScrollEvent) {
+            f32 scroll = -input_event.y;
+            f32 zoom_speed = 0.5f;
+            camera->radius = clamp(camera->radius + zoom_speed * scroll, 0.0f, 100.0f);
+        }
     }
 
     /* child-parent update if camera is anchored to hero */
@@ -133,10 +166,15 @@ void UpdateAndRender() {
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    mat4 i = mat4(1.0f);
+
     u32 temp = glutil_sampler_2d;
     glutil_sampler_2d = state->wall.id;
-    DrawMesh(state->cube, state->hero_position, {1,1,1,1});
+    DrawMesh(state->cube, state->hero_position, {1,1,1,1}, &state->hero_basis);
+    DrawMesh(state->cube, v3(3, 0, 0), {1,1,1,1}, &i);
     glutil_sampler_2d = temp;
+
+    DrawLine(v3(0, 0, 0), v3(4, 4, 4), v4(0, 0, 1, 1));
 }
 
 
@@ -219,7 +257,7 @@ void RotateUp(Camera *camera, f32 radians) {
 }
 
 
-void DrawMesh(Mesh mesh, v3 position, v4 color) {
+void DrawMesh(Mesh mesh, v3 position, v4 color, mat4 *basis) {
     static b32 initialized = false;
     static u32 program = 0;
 
@@ -283,18 +321,19 @@ void DrawMesh(Mesh mesh, v3 position, v4 color) {
 
     mat4 model = mat4(1.0f);
     model = translate(model, position);
+    model = model * (*basis);
 
     glUseProgram(program);
-    u32 color_location = glGetUniformLocation(program, "color");
+    int color_location = glGetUniformLocation(program, "color");
     glUniform4fv(color_location, 1, (f32*)&color);
 
-    u32 view_location = glGetUniformLocation(program, "view");
+    int view_location = glGetUniformLocation(program, "view");
     glUniformMatrix4fv(view_location, 1, GL_FALSE, (f32*)&view);
 
-    u32 projection_location = glGetUniformLocation(program, "projection");
+    int projection_location = glGetUniformLocation(program, "projection");
     glUniformMatrix4fv(projection_location, 1, GL_FALSE, (f32*)&projection);
 
-    u32 model_location = glGetUniformLocation(program, "model");
+    int model_location = glGetUniformLocation(program, "model");
     glUniformMatrix4fv(model_location, 1, GL_FALSE, (f32*)&model);
 
     glActiveTexture(GL_TEXTURE0);
@@ -302,4 +341,80 @@ void DrawMesh(Mesh mesh, v3 position, v4 color) {
 
     glBindVertexArray(mesh.vao);
     glDrawArrays(GL_TRIANGLES, 0, mesh.vertex_count);
+}
+
+void DrawLine(v3 a, v3 b, v4 color) {
+    static GLuint vao, vbo, program;
+    static b32 initialized = false;
+    static int mvp_location, color_location;
+
+    if (!initialized) {
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(v3), 0, GL_DYNAMIC_DRAW);
+
+        const char *vertex_source = R"(
+            #version 460
+            layout (location = 0) in vec3 p;
+
+            uniform mat4 mvp;
+
+            void  main() {
+                gl_Position = mvp * vec4(p, 1.0);
+            }
+        )";
+
+        const char *frag_source = R"(
+            #version 460
+
+            out vec4 frag_color;
+            uniform vec4 color;
+
+            void main() {
+                frag_color = color;
+            }
+        )";
+
+        GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vs, 1, &vertex_source, 0);
+
+        GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fs, 1, &frag_source, 0);
+
+        CompileShader(vs);
+        CompileShader(fs);
+
+        program = glCreateProgram();
+        glAttachShader(program, vs);
+        glAttachShader(program, fs);
+        LinkProgram(program);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+
+        mvp_location = glGetUniformLocation(program, "mvp");
+        color_location = glGetUniformLocation(program, "color");
+
+        initialized = true;
+    }
+
+    v3 points[] = { a, b };
+    glNamedBufferSubData(vbo, 0, sizeof(v3) * 2, (f32 *)points);
+
+    Camera *camera = GetGameCamera();
+
+    mat4 view;
+    GetCameraTransform(camera, &view);
+
+    mat4 projection;
+    GetProjectionTransform(&projection);
+
+    mat4 mvp = projection * view;
+
+    glUseProgram(program);
+    glUniformMatrix4fv(mvp_location, 1, GL_FALSE, (f32 *)&mvp);
+    glUniform4fv(color_location, 1, (f32 *)&color);
+    glBindVertexArray(vao);
+    glDrawArrays(GL_LINES, 0, 2);
 }
