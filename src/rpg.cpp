@@ -5,7 +5,6 @@ void *ArenaAlloc(Arena *arena, u64 count);
 Arena CreateArena(void *base_address, u64 size);
 
 struct Camera {
-    //v3 position;
     v3 target;
 
     f32 azimuth;
@@ -13,10 +12,14 @@ struct Camera {
     f32 radius;
 };
 
+struct Object3D {
+    mat4 basis;
+};
+
 struct GameState {
     b32 initialized;
 
-    mat4 hero_basis;
+    Object3D hero;
 
     Mesh cube;
     Camera camera;
@@ -26,9 +29,35 @@ struct GameState {
     v3 hero_position;
 };
 
-struct RenderObject {
+v3 GetObjectFront(Object3D *object) {
+    v3 result = v3(object->basis[2]);
+    return result;
+}
 
-};
+v3 GetObjectRight(Object3D *object) {
+    v3 result = v3(object->basis[0]);
+    return result;
+}
+
+v3 GetObjectUp(Object3D *object) {
+    v3 result = v3(object->basis[1]);
+    return result;
+}
+
+void SetObjectBasis(Object3D *object, v3 front) {
+    v3 right = normalize(cross(front, v3(0, 1, 0)));
+    v3 up    = normalize(cross(right, front));
+
+    object->basis[0] = v4(right, 0);
+    object->basis[1] = v4(up, 0);
+    object->basis[2] = v4(front, 0);
+}
+
+void CreateObject3D(Object3D *object) {
+    *object = {};
+
+    object->basis = mat4(1.0f);
+}
 
 void DrawMesh(Mesh, v3, v4, mat4 *);
 void DrawLine(v3 a, v3 b, v4 color);
@@ -62,7 +91,6 @@ void UpdateAndRender() {
         state->cube = cube;
 
         Camera *camera = &state->camera;
-        //camera->position = {0,0,0};
         camera->radius = 6;
         camera->target = {};
 
@@ -73,7 +101,8 @@ void UpdateAndRender() {
         glfwGetFramebufferSize(platform.window, &w, &h);
 
         state->projection = perspective(radians(45.0f), (float)w / (float)h, 0.1f, 100.0f);
-        state->hero_basis = mat4(1.0f);
+
+        CreateObject3D(&state->hero);
 
         LoadTexture("assets/wall.jpg", &state->wall);
 
@@ -141,10 +170,7 @@ void UpdateAndRender() {
                 v3 right = normalize(cross(front, v3(0, 1, 0)));
                 v3 up    = normalize(cross(right, front));
 
-                state->hero_basis[0] = v4(right, 0);
-                state->hero_basis[1] = v4(up, 0);
-                state->hero_basis[2] = v4(front, 0);
-
+                SetObjectBasis(&state->hero, front);
             } else if (IsButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
                 // change the camera direction
                 f32 rotate_speed = 0.1f;
@@ -162,7 +188,8 @@ void UpdateAndRender() {
     }
 
     /* child-parent update if camera is anchored to hero */
-    camera->target = state->hero_position;
+    v3 child_position_offset = v3(0,0,0);
+    camera->target = state->hero_position + child_position_offset;
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -170,11 +197,15 @@ void UpdateAndRender() {
 
     u32 temp = glutil_sampler_2d;
     glutil_sampler_2d = state->wall.id;
-    DrawMesh(state->cube, state->hero_position, {1,1,1,1}, &state->hero_basis);
+    DrawMesh(state->cube, state->hero_position, {1,1,1,1}, &state->hero.basis);
     DrawMesh(state->cube, v3(3, 0, 0), {1,1,1,1}, &i);
     glutil_sampler_2d = temp;
 
-    DrawLine(v3(0, 0, 0), v3(4, 4, 4), v4(0, 0, 1, 1));
+    glDisable(GL_DEPTH_TEST);
+    DrawLine(state->hero_position, state->hero_position + v3(state->hero.basis[0]), v4(1, 0, 0, 1));
+    DrawLine(state->hero_position, state->hero_position + v3(state->hero.basis[1]), v4(0, 1, 0, 1));
+    DrawLine(state->hero_position, state->hero_position + v3(state->hero.basis[2]), v4(0, 0, 1, 1));
+    glEnable(GL_DEPTH_TEST);
 }
 
 
@@ -354,6 +385,8 @@ void DrawLine(v3 a, v3 b, v4 color) {
         glBindVertexArray(vao);
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(v3), 0, GL_DYNAMIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(v3), 0);
+        glEnableVertexAttribArray(0);
 
         const char *vertex_source = R"(
             #version 460
